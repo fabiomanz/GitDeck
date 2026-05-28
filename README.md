@@ -1,13 +1,15 @@
 # GitDeck
 
-An Anki add-on that syncs a deck with a [CrowdAnki](https://github.com/Apehaenger/CrowdAnki) git repository via two Tools menu items.
+An Anki add-on that keeps a deck in sync with a [CrowdAnki](https://github.com/Apehaenger/CrowdAnki) git repository. Two buttons in the toolbar (and matching items in the Tools menu) handle the full pull and push workflow.
 
-| Menu item | What it does |
-|-----------|-------------|
-| **Pull & Import** | Runs `git pull` in your local repo, then imports the deck into Anki via CrowdAnki's `AnkiJsonImporter` |
-| **Export & Push** | Exports the configured deck as CrowdAnki JSON into the repo directory, then runs `git add -A && git commit && git push` |
+| Action | What it does |
+|--------|-------------|
+| **Pull** | Runs `git pull`, imports the deck, and deletes any notes that were removed from the repo — so deletions propagate to everyone |
+| **Push** | Exports the deck as CrowdAnki JSON and runs `git commit && git push` |
 
-All git and network calls run off the UI thread using `aqt.operations.QueryOp`. Any error — including merge conflicts — aborts cleanly and shows a dialog instead of trying to auto-resolve.
+The Pull button turns blue with a ⬇ icon when the remote has new commits. This is checked automatically on startup and every 5 minutes.
+
+Any error — including merge conflicts — aborts cleanly and shows a dialog. Nothing is auto-resolved.
 
 ---
 
@@ -15,7 +17,7 @@ All git and network calls run off the UI thread using `aqt.operations.QueryOp`. 
 
 - Anki **2.1.50** or later
 - [CrowdAnki](https://ankiweb.net/shared/info/1788670778) add-on installed
-- A local clone of your CrowdAnki git repository with SSH remotes already configured (GitDeck shells out to the system `git` binary and does not manage authentication)
+- A local clone of your CrowdAnki git repository with SSH already configured — GitDeck uses the system `git` binary and does not manage authentication
 
 ---
 
@@ -49,17 +51,18 @@ Go to **Tools → Add-ons**, select GitDeck, and click **Config**.
 
 | Key | Description |
 |-----|-------------|
-| `repo_path` | Absolute path to the local CrowdAnki git repository |
+| `repo_path` | Absolute path to the folder inside your git repository that contains the CrowdAnki deck files |
 | `deck_name` | Exact deck name as shown in Anki, including `::` for sub-decks (e.g. `Japanese::Core 2000`) |
 
 ---
 
 ## Usage
 
-Once configured:
+Once configured, use the **GitDeck Pull** and **GitDeck Push** buttons in the top toolbar, or find the same actions under **Tools → Pull & Import** and **Tools → Export & Push**.
 
-- **Tools → Pull & Import** — fetches the latest changes from the remote and imports the deck. If there is a merge conflict or any git error, you will see an error dialog and no import will occur.
-- **Tools → Export & Push** — exports the current state of the deck into the repo directory and pushes it. If the deck has not changed since the last export, the commit step is skipped and you will see a "nothing committed" tooltip.
+**Pulling** fetches the latest changes, imports the deck, and removes any notes that no longer exist in the shared repo. A tooltip confirms how many notes were added, updated, or deleted.
+
+**Pushing** exports the current state of the deck and commits it. If nothing has changed since the last export, the commit step is skipped.
 
 ---
 
@@ -72,6 +75,7 @@ GitDeck/
 ├── __init__.py   # all add-on logic
 ├── config.json   # default config (both fields empty)
 ├── config.md     # shown in Anki's built-in config editor
+├── icon.svg      # add-on manager icon
 └── manifest.json # add-on metadata
 ```
 
@@ -93,36 +97,15 @@ GitDeck/
    ln -s "$(pwd)/GitDeck" ~/.local/share/Anki2/addons21/gitdeck
    ```
 
-3. **Install CrowdAnki** (required at runtime). Install it via Anki's add-on browser (id `1788670778`) or from [its GitHub repo](https://github.com/Apehaenger/CrowdAnki).
+3. **Install CrowdAnki** (required at runtime) via Anki's add-on browser (id `1788670778`) or from [its GitHub repo](https://github.com/Apehaenger/CrowdAnki).
 
-4. **Restart Anki.** You should see "Pull & Import" and "Export & Push" in the Tools menu.
-
-### Testing checklist
-
-Before submitting a PR, manually verify the following scenarios:
-
-**Pull & Import**
-- [ ] Happy path: remote has new cards → deck is updated after pull
-- [ ] No-op pull (already up to date) → import still runs without error
-- [ ] Git error (e.g. no network, bad remote URL) → error dialog shown, no import attempted
-- [ ] Merge conflict in repo → error dialog shown with git's conflict message
-
-**Export & Push**
-- [ ] Happy path: deck has changes → files written, commit created, push succeeds
-- [ ] No changes since last export → "nothing committed" tooltip, no empty commit
-- [ ] Deck name not found in collection → error dialog before any git operation
-- [ ] Push rejected by remote (e.g. non-fast-forward) → error dialog with git's message
-
-**Config**
-- [ ] Missing `repo_path` or `deck_name` → error dialog on menu click, before any git/Anki operation
-- [ ] Sub-deck name with `::` → export and import both work correctly
+4. **Restart Anki.** You should see **GitDeck Pull** and **GitDeck Push** in the top toolbar.
+ → export and import both work correctly
 
 ### Viewing add-on errors
 
-If Anki crashes or the add-on silently fails, check the debug console:
-
 - **macOS / Linux**: run Anki from the terminal — Python tracebacks print to stdout.
-- **Windows**: use **Help → Open debug console** (or start `anki.exe` from a terminal).
+- **Windows**: use **Help → Open debug console** or start `anki.exe` from a terminal.
 
 ### Releasing a new version
 
@@ -130,7 +113,7 @@ If Anki crashes or the add-on silently fails, check the debug console:
 2. Zip the contents of the `GitDeck/` directory (**not** the directory itself):
    ```bash
    cd GitDeck
-   zip -r ../gitdeck.ankiaddon __init__.py config.json config.md manifest.json
+   zip -r ../gitdeck.ankiaddon __init__.py config.json config.md icon.svg manifest.json
    ```
 3. Upload `gitdeck.ankiaddon` to AnkiWeb.
 
@@ -138,4 +121,4 @@ If Anki crashes or the add-on silently fails, check the debug console:
 
 ## License
 
-MIT
+GNU AGPLv3
