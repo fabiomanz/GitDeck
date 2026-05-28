@@ -11,6 +11,7 @@ Any error is shown in a dialog; nothing is auto-resolved.
 """
 
 import importlib
+import json
 import subprocess
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,18 @@ from aqt.utils import tooltip
 
 # AnkiWeb numeric ID for the CrowdAnki add-on.
 _CA = "1788670778"
+
+# Inline version of icon.svg for the toolbar Pull button (inherits parent colour).
+_DOWN_ARROW = (
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" width="11" height="11" '
+    'fill="none" stroke="currentColor" stroke-width="2.2" '
+    'stroke-linecap="round" stroke-linejoin="round" '
+    'style="vertical-align:middle;margin-right:3px;">'
+    '<line x1="8" y1="3.5" x2="8" y2="10"/>'
+    '<polyline points="5.5,7.5 8,10 10.5,7.5"/>'
+    '<line x1="5" y1="12.5" x2="11" y2="12.5"/>'
+    '</svg>'
+)
 
 # True when the remote has commits the local repo does not.
 _has_remote_updates = False
@@ -95,6 +108,43 @@ def _check_remote() -> None:
     mw.taskman.run_in_background(worker, on_done)
 
 
+# ── Deletion of notes removed from the repo ───────────────────────────────────
+
+def _collect_guids(deck_json: dict) -> set:
+    """Recursively collect all note GUIDs from a CrowdAnki deck JSON tree."""
+    guids = {note["guid"] for note in deck_json.get("notes", [])}
+    for child in deck_json.get("children", []):
+        guids |= _collect_guids(child)
+    return guids
+
+
+def _delete_removed_notes(repo_path: str, deck_name: str) -> int:
+    """Delete notes that exist in the collection but are absent from the repo JSON.
+
+    CrowdAnki's importer only adds/updates — it never removes. This fills that gap.
+    Returns the number of notes deleted.
+    """
+    repo = Path(repo_path)
+    # Mirror CrowdAnki's own file-discovery logic.
+    json_path = repo / "deck.json"
+    if not json_path.exists():
+        json_path = repo / (repo.name + ".json")
+    if not json_path.exists():
+        return 0
+
+    with json_path.open(encoding="utf8") as f:
+        json_guids = _collect_guids(json.load(f))
+
+    # find_notes with deck: includes all sub-decks automatically.
+    note_ids = mw.col.find_notes(f'deck:"{deck_name}"')
+    to_delete = [nid for nid in note_ids if mw.col.get_note(nid).guid not in json_guids]
+
+    if to_delete:
+        mw.col.remove_notes(to_delete)
+
+    return len(to_delete)
+
+
 # ── Pull & Import ──────────────────────────────────────────────────────────────
 
 def _pull_and_import() -> None:
@@ -110,10 +160,14 @@ def _pull_and_import() -> None:
         global _has_remote_updates
         try:
             mod = _ca("importer.anki_importer")
-            mod.AnkiJsonImporter.import_deck_from_path(mw.col, Path(repo_path))
+            mod.AnkiJsonImporter(mw.col).load_deck(Path(repo_path))
+            deleted = _delete_removed_notes(repo_path, deck_name)
             _has_remote_updates = False
             mw.toolbar.draw()
-            tooltip("GitDeck: pull & import complete.", period=3000)
+            msg = "GitDeck: pull & import complete."
+            if deleted:
+                msg += f" {deleted} note(s) deleted."
+            tooltip(msg, period=4000)
         except Exception as exc:
             _err("Import error", exc)
 
@@ -164,7 +218,7 @@ def _export_and_push() -> None:
     commit_msg = f"GitDeck Update {deck_name} – {datetime.now().strftime('%Y-%m-%d %H:%M')}"
 
     def op(_col) -> str:
-        _git(["add", "-A"], cwd=repo_path)
+        _git(["add", repo_path], cwd=repo_path)
 
         r = subprocess.run(
             ["git", "commit", "-m", commit_msg],
@@ -223,7 +277,7 @@ def _setup_toolbar(links: list, toolbar) -> None:
     toolbar.link_handlers["gitdeck_push"] = _export_and_push
 
     if _has_remote_updates:
-        pull_content = '⬇ GitDeck Pull'
+        pull_content = f'{_DOWN_ARROW}GitDeck Pull'
         pull_style = ' style="color:#4c9be8"'
     else:
         pull_content = "GitDeck Pull"

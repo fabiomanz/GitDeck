@@ -80,7 +80,7 @@ GitDeck/
 1. **Clone the repo**
 
    ```bash
-   git clone https://github.com/<you>/GitDeck.git
+   git clone https://github.com/fabiomanz/GitDeck.git
    ```
 
 2. **Symlink into Anki's add-ons directory** so changes take effect on the next Anki restart without copying files manually.
