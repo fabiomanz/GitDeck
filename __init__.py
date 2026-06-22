@@ -21,8 +21,17 @@ from aqt.operations import QueryOp
 from aqt.qt import QAction, QMessageBox, QTimer
 from aqt.utils import tooltip
 
-# AnkiWeb numeric ID for the CrowdAnki add-on.
-_CA = "1788670778"
+# AnkiWeb numeric ID for CrowdAnki: the folder name AnkiWeb installs use, and the
+# code to suggest if CrowdAnki can't be found.
+_CA_ANKIWEB_ID = "1788670778"
+
+# Published name in CrowdAnki's manifest.json. This is its stable, version-
+# independent identity, so we match on it rather than the folder name (dev clones
+# use an arbitrary name) or internal module paths (which change across releases).
+_CA_NAME = "crowdanki"
+
+# Cached top-level module name of the located CrowdAnki package.
+_ca_module = None
 
 # Inline version of icon.svg for the toolbar Pull button (inherits parent colour).
 _DOWN_ARROW = (
@@ -51,9 +60,39 @@ def _err(title: str, body) -> None:
     QMessageBox.critical(mw, f"GitDeck – {title}", str(body))
 
 
+def _ca_manifest_name(dir_name: str) -> str:
+    """Return the 'name' from an add-on's manifest.json, or '' if unreadable."""
+    manifest = Path(mw.addonManager.addonsFolder(dir_name)) / "manifest.json"
+    try:
+        return json.loads(manifest.read_text(encoding="utf-8")).get("name", "")
+    except Exception:
+        return ""
+
+
+def _find_ca() -> str:
+    """Locate the installed CrowdAnki add-on regardless of its folder name."""
+    global _ca_module
+    if _ca_module is not None:
+        return _ca_module
+
+    matches = [
+        d for d in mw.addonManager.allAddons()
+        if _ca_manifest_name(d).strip().lower() == _CA_NAME
+    ]
+    if not matches:
+        raise RuntimeError(
+            "CrowdAnki add-on not found. Install it from AnkiWeb "
+            f"(code {_CA_ANKIWEB_ID})."
+        )
+    # Prefer the canonical AnkiWeb install if a dev clone is also present.
+    matches.sort(key=lambda d: d != _CA_ANKIWEB_ID)
+    _ca_module = matches[0]
+    return _ca_module
+
+
 def _ca(submodule: str):
-    """Import a submodule from the installed CrowdAnki package by numeric ID."""
-    return importlib.import_module(f"{_CA}.{submodule}")
+    """Import a submodule from the installed CrowdAnki package."""
+    return importlib.import_module(f"{_find_ca()}.{submodule}")
 
 
 def _git(args: list, cwd: str) -> str:
